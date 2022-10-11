@@ -1,18 +1,30 @@
-import scipy.io.wavfile as wav
-import numpy as np
-from tempfile import TemporaryFile
+import operator
 import os
 import pickle
 import random
-import operator
-import math
 
+import numpy as np
+import scipy.io.wavfile as wav
+from python_speech_features import mfcc
 
-def euclideanDistance(instance1, instance2, length):
+directory = "../Music-Genre-Classification/Data/genres_original"
+i = 0
+dataset = []
+trainingSet = []
+testSet = []
+predictions = []
+
+def euclideanDistance(instance1, instance2, k):
     distance = 0
-    for x in range(length):
-        distance += pow((instance1[x] - instance2[x]), 2)
-    return math.sqrt(distance)
+    mm1 = instance1[0]
+    cm1 = instance1[1]
+    mm2 = instance2[0]
+    cm2 = instance2[1]
+    distance = np.trace(np.dot(np.linalg.inv(cm2), cm1))
+    distance += (np.dot(np.dot((mm2 - mm1).transpose(), np.linalg.inv(cm2)), mm2 - mm1))
+    distance += np.log(np.linalg.det(cm2)) - np.log(np.linalg.det(cm1))
+    distance -= k
+    return distance
 
 
 def getNeighbors(trainingSet, instance, k):
@@ -45,3 +57,46 @@ def getAccuracy(testSet, predictions):
         if testSet[x][-1] == predictions[x]:
             correct += 1
     return 1.0 * correct / len(testSet)
+
+
+# f = open("my.dat", 'wb')
+# for folder in os.listdir(directory):
+#     i += 1
+#     if i == 11:
+#         break
+#     for file in os.listdir(directory + "/" + folder):
+#         try:
+#             (rate, sig) = wav.read(directory + "/" + folder + "/" + file)
+#             mfcc_feat = mfcc(sig, rate, winlen=0.020, appendEnergy=False)
+#             covariance = np.cov(np.matrix.transpose(mfcc_feat))
+#             mean_matrix = mfcc_feat.mean(0)
+#             feature = (mean_matrix, covariance, i)
+#             pickle.dump(feature, f)
+#         except Exception as e:
+#             print("Got an exception: ", e, 'in folder: ', folder, ' filename: ', file)
+# f.close()
+
+
+def loadDataset(filename, split, trSet, teSet):
+    with open("my.dat", 'rb') as f:
+        while True:
+            try:
+                dataset.append(pickle.load(f))
+            except EOFError:
+                f.close()
+                break
+    for x in range(len(dataset)):
+        if random.random() < split:
+            trSet.append(dataset[x])
+        else:
+            teSet.append(dataset[x])
+
+
+loadDataset("my.dat", 0.7, trainingSet, testSet)
+
+length = len(testSet)
+for x in range(length):
+    predictions.append(nearestClass(getNeighbors(trainingSet, testSet[x], 5)))
+
+accuracy1 = getAccuracy(testSet, predictions)
+print(accuracy1)
