@@ -17,6 +17,7 @@ def model_assess(model, title="Default"):
 
 
 data = pd.read_csv('../Music-Genre-Classification/Data/features_3_sec.csv')
+# data = pd.read_csv('F:/fma_metadata/echonest.csv')
 data = data.iloc[0:, 1:]
 encoder = LabelEncoder()
 y = encoder.fit_transform(data['label'])
