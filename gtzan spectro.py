@@ -2,19 +2,19 @@ import ast
 import bz2
 import os
 import pickle
-import time
-import tensorflow as tf
+import classic as cl
 import librosa
 import pandas as pd
 import matplotlib.pyplot as plt
 import gc
+import sys
 from pandas.api.types import CategoricalDtype
 from librosa.display import specshow
 from librosa.feature import melspectrogram
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import SGDClassifier
 from sklearn.metrics import accuracy_score
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, StratifiedKFold
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.naive_bayes import GaussianNB
 from sklearn.neighbors import KNeighborsClassifier
@@ -28,10 +28,13 @@ from PIL import Image
 from tqdm import tqdm
 from subprocess import Popen, PIPE, STDOUT
 
-file_output_img = 'E:/PycharmProjects/Music-Genre-Classification/spectrograms/images/'
-file_output = 'E:/PycharmProjects/Music-Genre-Classification/spectrograms/'
-file_output_slic = 'E:/PycharmProjects/Music-Genre-Classification/spectrograms/slices/'
-audio_location = "F:/fma_medium/"
+file_output_img = 'E:/PycharmProjects/Music-Genre-Classification/gtzan/spectrograms/images/'
+file_output = 'E:/PycharmProjects/Music-Genre-Classification/gtzan/spectrograms/'
+file_output_slic = 'E:/PycharmProjects/Music-Genre-Classification/gtzan/spectrograms/slices/'
+file_output_slic2 = 'E:/PycharmProjects/Music-Genre-Classification/gtzan/spectrograms/images/'
+file_output_slic3 = 'E:/PycharmProjects/Music-Genre-Classification/Data/images_original/'
+audio_location = "E:/PycharmProjects/Music-Genre-Classification/Data/genres_original/"
+i = 0
 
 
 def read_audio(conf, pathname, trim_long_data):
@@ -83,59 +86,63 @@ def load_spectrogram(path, image_size):
     spectrogram = Image.open(path)
     spectrogram = spectrogram.resize((image_size, image_size), resample=Image.LANCZOS)
     spectrogram_data = np.asarray(spectrogram, dtype=np.uint8).reshape(-1)
-    return spectrogram_data
+    return spectrogram_data/255
 
 
-def create_dataset_from_slices(genres, slice_size):
+def create_dataset_from_slices(slice_size):
     data = []
     # for every directory in the images folder
-    for direct in os.listdir(file_output_slic):
+    for direct in os.listdir(file_output_slic2):
         print("-> Adding {}...".format(direct))
-        filenames = os.listdir(os.path.join(file_output_slic, direct))
-        filenames = [filename for filename in filenames if filename.endswith('.jpg')]
+        filenames = os.listdir(os.path.join(file_output_slic2, direct))
+        filenames = [filename for filename in filenames if filename.endswith('.png')]
         filenames = filenames
         shuffle(filenames)
         for filename in filenames:
-            img_data = load_spectrogram(os.path.join(file_output_slic, direct, filename), slice_size)
+            img_data = load_spectrogram(os.path.join(file_output_slic2, direct, filename), slice_size)
             id = filename.split('_')[0]
-            data.append([img_data, genres['genre'].where(genres['track_id'] == int(id.lstrip("0"))).dropna().values[0]])
+            data.append([img_data, direct])
     # Shuffle data
     shuffle(data)
+    skf = StratifiedKFold(n_splits=5, shuffle=True)
     # Extract X and y
     x, y = zip(*data)
     del data, img_data,
-    gc.collect()
+    for train_idx, val_idx in skf.split(x, y):
+        # train_x, test_x, train_y, test_y = train_test_split(x, y, test_size=0.3)
+        X_tr = np.array(x)[train_idx]
+        y_tr = np.array(y)[train_idx]
 
-    train_x, test_x, train_y, test_y = train_test_split(x, y, test_size=0.3)
-    del x, y
-    gc.collect()
-    return train_x, train_y, test_x, test_y
+        X_val = np.array(x)[val_idx]
+        y_val = np.array(y)[val_idx]
+        cl.main(X_tr, y_tr, X_val, y_val)
 
 
-def model_assess(model, train_x, train_y, title="Default"):
-    model.fit(train_x, train_y)
-    pred = model.predict(test_x)
-    print('Accuracy', title, ':', round(accuracy_score(test_y, pred), 5), '\n')
+# def model_assess(model, train_x, train_y, title="Default"):
+#     model.fit(train_x, train_y)
+#     pred = model.predict(test_x)
+#     print('Accuracy', title, ':', round(accuracy_score(test_y, pred), 5), '\n')
 
 
 def rename_file(img_name):
     img_name = img_name.split("/")
     img_name = img_name[-1]
-    img_name = img_name.split('.')[0]
+    img_name = img_name.split('.wav')[0]
     img_name += ".jpg"
     return img_name
 
 
-def save_image_from_sound(tid):
-    filepath = get_audio_path(audio_location, tid)
+def save_image_from_sound(tid,foldername):
+    filepath = os.path.join(audio_location,foldername,tid)
     filename = rename_file(filepath)
     x = read_as_melspectrogram(conf, filepath, trim_long_data=False, debug_display=True)
     # x_color = mono_to_color(x)
 
     plt.imshow(x, interpolation='nearest')
     plt.axis('off')
-    if not os.path.exists(file_output_img + filename[:3]):
-        os.makedirs(file_output_img + filename[:3])
+    adr = file_output_img + filename[:3]
+    if not os.path.exists(file_output_img + foldername):
+        os.makedirs(file_output_img + foldername)
     final_file = file_output_img + filename
     plt.savefig(final_file, bbox_inches='tight', pad_inches=0)
     print('saving: ', final_file)
@@ -143,16 +150,6 @@ def save_image_from_sound(tid):
     del x
     gc.collect()
 
-
-def get_audio_path(audio_dir, track_id):
-    tid_str = '{:06d}'.format(track_id)
-    return os.path.join(audio_dir, tid_str[:3], tid_str + '.mp3')
-
-
-# file_path = 'F:/fma_metadata/tracks.csv'
-# subset = 'medium'
-# tracks = pd.read_csv(file_path, index_col=0, header=[0, 1])
-#
 
 def slice_spectrograms(desired_size):
     spectrograms_path = file_output_img
@@ -173,8 +170,8 @@ def slice_(img_path, desired_size):
     width, height = img.size
     samples_size = int(width / desired_size)
     track_id = img_path.split('/')[-1]
-    slice_path = 'slices/{}'.format(track_id[:3])
-
+    slice_path = 'slices/{}'.format(track_id.split("\\")[0])
+    adr = os.path.join(file_output_slic, slice_path)
     if not os.path.exists(os.path.join(file_output, slice_path)):
         os.makedirs(os.path.join(file_output, slice_path))
 
@@ -183,79 +180,26 @@ def slice_(img_path, desired_size):
         img_tmp = img.crop((start_pixel, 1, start_pixel +
                             desired_size, desired_size + 1))
         save_path = os.path.join(file_output, "slices")
+        adr2 = save_path + "/{}_{}.jpg".format(track_id.rstrip('.jpg'), i)
         img_tmp.save(save_path + "/{}_{}.jpg".format(track_id.rstrip('.jpg'), i))
 
-def load(filepath):
-    filename = os.path.basename(filepath)
 
-    if 'features' in filename:
-        return pd.read_csv(filepath, index_col=0, header=[0, 1, 2])
+# for folder in os.listdir(audio_location):
+#     i += 1
+#     if i == 11:
+#         break
+#     for file in os.listdir(audio_location + "/" + folder):
+#         try:
+#             save_image_from_sound(file,folder)
+#         except Exception as e:
+#             print("Got an exception: ", e, 'in folder: ', folder, ' filename: ', file)
 
-    if 'echonest' in filename:
-        return pd.read_csv(filepath, index_col=0, header=[0, 1, 2])
-
-    if 'genres' in filename:
-        return pd.read_csv(filepath, index_col=0)
-
-    if 'tracks' in filename:
-        tracks = pd.read_csv(filepath, index_col=0, header=[0, 1])
-
-        COLUMNS = [('track', 'tags'), ('album', 'tags'), ('artist', 'tags'),
-                   ('track', 'genres'), ('track', 'genres_all')]
-        for column in COLUMNS:
-            tracks[column] = tracks[column].map(ast.literal_eval)
-
-        COLUMNS = [('track', 'date_created'), ('track', 'date_recorded'),
-                   ('album', 'date_created'), ('album', 'date_released'),
-                   ('artist', 'date_created'), ('artist', 'active_year_begin'),
-                   ('artist', 'active_year_end')]
-        for column in COLUMNS:
-            tracks[column] = pd.to_datetime(tracks[column])
-
-        SUBSETS = ('small', 'medium', 'large')
-        tracks['set', 'subset'] = tracks['set', 'subset'].astype(
-            CategoricalDtype(categories=SUBSETS, ordered=True))
-
-        COLUMNS = [('track', 'genre_top'), ('track', 'license'),
-                   ('album', 'type'), ('album', 'information'),
-                   ('artist', 'bio')]
-        for column in COLUMNS:
-            tracks[column] = tracks[column].astype('category')
-
-        return tracks
-
-
-#
-# subset = tracks.index[tracks['set', 'subset'] <= subset]
-# labels = tracks.loc[subset, ('track', 'genre_top')]
-# labels.name = 'genre'
-# labels = labels.dropna()
-# labels.to_csv('preprocessing/train_labels.csv', header=True)
-def read_metadata(name):
-    return load('F:/fma_metadata/{0}.csv'.format(name))
-
-
-# genres = read_metadata('genres')
-# features = read_metadata('features')
-# echonest = read_metadata('echonest')
-# tracks = read_metadata('tracks')
-# medium_tracks = tracks[tracks[('set', 'subset')] <= 'medium']
-# tracks_spectro = medium_tracks[[('track', 'genre_top'), ('track', 'duration')]]
-# genres = pd.read_csv('preprocessing/train_labels.csv')
-# tids = tracks_spectro.index
-# for tid in tids:
-#     try:
-#         save_image_from_sound(tid)
-#     except Exception as e:
-#         print('{}: {}'.format(tid, repr(e)))
 # slice_spectrograms(198)
-# gc.enable()
-# train_x, train_y, test_x, test_y = create_dataset_from_slices(genres, 198)
-# del genres
-# gc.collect()
+file_path = 'outputclass2.txt'
+sys.stdout = open(file_path, "w")
+gc.enable()
+create_dataset_from_slices(198)
 
-# identify cuda gpu
-print(len(tf.config.experimental.list_physical_devices('GPU')))
 
 # nb = GaussianNB()
 # model_assess(nb, train_x, train_y, "Naive Bayes")
