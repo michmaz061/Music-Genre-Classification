@@ -2,6 +2,7 @@ import operator
 import os
 import pickle
 import random
+import sys
 from collections import defaultdict
 from random import shuffle
 import numpy as np
@@ -82,6 +83,8 @@ for folder in os.listdir(directory):
             print("Got an exception: ", e, 'in folder: ', folder, ' filename: ', file)
 # f.close()
 shuffle(data)
+file_path = 'outputclass3.txt'
+sys.stdout = open(file_path, "w")
 skf = StratifiedKFold(n_splits=5, shuffle=True)
 x, y = zip(*data)
 for train_idx, val_idx in skf.split(x, y):

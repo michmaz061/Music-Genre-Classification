@@ -95,7 +95,8 @@ def create_dataset_from_slices(slice_size):
     for direct in os.listdir(file_output_slic2):
         print("-> Adding {}...".format(direct))
         filenames = os.listdir(os.path.join(file_output_slic2, direct))
-        filenames = [filename for filename in filenames if filename.endswith('.png')]
+        filenames = [filename for filename in filenames if filename.endswith('.jpg')]
+        # filenames = [filename for filename in filenames if filename.endswith('.png')]
         filenames = filenames
         shuffle(filenames)
         for filename in filenames:
@@ -195,8 +196,8 @@ def slice_(img_path, desired_size):
 #             print("Got an exception: ", e, 'in folder: ', folder, ' filename: ', file)
 
 # slice_spectrograms(198)
-file_path = 'outputclass2.txt'
-sys.stdout = open(file_path, "w")
+# file_path = 'outputclass2.txt'
+# sys.stdout = open(file_path, "w")
 gc.enable()
 create_dataset_from_slices(198)
 
