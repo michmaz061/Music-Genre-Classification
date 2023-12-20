@@ -14,13 +14,12 @@ from librosa.feature import melspectrogram
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import SGDClassifier
 from sklearn.metrics import accuracy_score
-from sklearn.model_selection import train_test_split, StratifiedKFold
+from sklearn.model_selection import train_test_split, StratifiedKFold, StratifiedShuffleSplit
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.naive_bayes import GaussianNB
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import LabelEncoder
 from sklearn.tree import DecisionTreeClassifier
-from xgboost import XGBClassifier
 import shutil
 import numpy as np
 from random import shuffle
@@ -28,33 +27,30 @@ from PIL import Image
 from tqdm import tqdm
 from subprocess import Popen, PIPE, STDOUT
 
-file_output_img = 'E:/PycharmProjects/Music-Genre-Classification/gtzan/spectrograms/images/'
-file_output = 'E:/PycharmProjects/Music-Genre-Classification/gtzan/spectrograms/'
-file_output_slic = 'E:/PycharmProjects/Music-Genre-Classification/gtzan/spectrograms/slices/'
-file_output_slic2 = 'E:/PycharmProjects/Music-Genre-Classification/gtzan/spectrograms/images/'
-file_output_slic3 = 'E:/PycharmProjects/Music-Genre-Classification/Data/images_original/'
-audio_location = "E:/PycharmProjects/Music-Genre-Classification/Data/genres_original/"
+file_output_img = '/mnt/e/PycharmProjects/Music-Genre-Classification/gtzan/spectrograms/images15-30_512,0,11025,256,2048/'
+file_output = '/mnt/e/PycharmProjects/Music-Genre-Classification/gtzan/spectrograms/'
+file_output_slic = '/mnt/e/PycharmProjects/Music-Genre-Classification/gtzan/spectrograms/slices/'
+file_output_slic2 = '/mnt/e/PycharmProjects/Music-Genre-Classification/gtzan/spectrograms/images/'
+file_output_slic3 = '/mnt/e/PycharmProjects/Music-Genre-Classification/Data/images_original/'
+audio_location = "/mnt/e/PycharmProjects/Music-Genre-Classification/Data/genres_original/"
 i = 0
 
 
-def read_audio(conf, pathname, trim_long_data):
-    y, sr = librosa.load(pathname, mono=True, duration=conf.duration)
-    # trim silence
-    if 0 < len(y):  # workaround: 0 length causes error
-        y, _ = librosa.effects.trim(y)  # trim, top_db=default(60)
-    # make it unified length to conf.samples
-    if len(y) > conf.samples:  # long enough
+def read_audio(conf2, pathname, trim_long_data):
+    y, sr = librosa.load(pathname, mono=True,offset=15, duration=conf2.duration)
+    if 0 < len(y):
+        y, _ = librosa.effects.trim(y)
+    if len(y) > conf2.samples:
         if trim_long_data:
-            y = y[0:0 + conf.samples]
-    else:  # pad blank
-        padding = conf.samples - len(y)  # add padding at both ends
+            y = y[0:0 + conf2.samples]
+    else:
+        padding = conf2.samples - len(y)
         offset = padding // 2
-        y = np.pad(y, (offset, conf.samples - len(y) - offset), 'constant')
+        y = np.pad(y, (offset, conf2.samples - len(y) - offset), 'constant')
     return y
 
 
-class conf:
-    # Preprocessing settings
+class conf1:
     sampling_rate = 22050
     duration = 5
     hop_length = 512
@@ -62,23 +58,36 @@ class conf:
     fmax = 8000
     n_mels = 128
     n_fft = 2048
+#   htk = False
+#   norm = None
+    samples = sampling_rate * duration
+
+class conf2:
+    sampling_rate = 22050
+    duration = 15
+    hop_length = 512 #512
+    fmin = 0 #20
+    fmax =  11025 #8000
+    n_mels = 256 #128
+    n_fft = 2048 #2048
+#   htk = False
+    norm = 'slaney'
     samples = sampling_rate * duration
 
 
-
-def audio_to_melspectrogram(conf, audio):
-    spectrogram = librosa.feature.melspectrogram(y=audio, sr=conf.sampling_rate, n_fft=conf.n_fft,
-                                                 hop_length=conf.hop_length, n_mels=conf.n_mels, fmin=conf.fmin,
-                                                 fmax=conf.fmax)
+def audio_to_melspectrogram(conf2, audio):
+    spectrogram = librosa.feature.melspectrogram(y=audio, sr=conf2.sampling_rate, n_fft=conf2.n_fft,
+                                                 hop_length=conf2.hop_length, n_mels=conf2.n_mels, fmin=conf2.fmin,
+                                                 fmax=conf2.fmax, norm=conf2.norm)
     spectrogram = librosa.power_to_db(spectrogram)
     spectrogram = spectrogram.astype(np.float32)
     return spectrogram
 
 
 
-def read_as_melspectrogram(conf, pathname, trim_long_data, debug_display=False):
-    x = read_audio(conf, pathname, trim_long_data)
-    mels = audio_to_melspectrogram(conf, x)
+def read_as_melspectrogram(conf1, pathname, trim_long_data, debug_display=False):
+    x = read_audio(conf1, pathname, trim_long_data)
+    mels = audio_to_melspectrogram(conf1, x)
     return mels
 
 
@@ -95,22 +104,20 @@ def create_dataset_from_slices(slice_size):
     for direct in os.listdir(file_output_slic2):
         print("-> Adding {}...".format(direct))
         filenames = os.listdir(os.path.join(file_output_slic2, direct))
-        filenames = [filename for filename in filenames if filename.endswith('.jpg')]
         # filenames = [filename for filename in filenames if filename.endswith('.png')]
+        filenames = [filename for filename in filenames if filename.endswith('.jpg')]
         filenames = filenames
         shuffle(filenames)
         for filename in filenames:
             img_data = load_spectrogram(os.path.join(file_output_slic2, direct, filename), slice_size)
-            id = filename.split('_')[0]
             data.append([img_data, direct])
     # Shuffle data
     shuffle(data)
-    skf = StratifiedKFold(n_splits=5, shuffle=True)
+    sss= StratifiedShuffleSplit(n_splits=10, test_size=0.25, random_state=0)
     # Extract X and y
     x, y = zip(*data)
     del data, img_data,
-    for train_idx, val_idx in skf.split(x, y):
-        # train_x, test_x, train_y, test_y = train_test_split(x, y, test_size=0.3)
+    for train_idx, val_idx in sss.split(x, y):
         X_tr = np.array(x)[train_idx]
         y_tr = np.array(y)[train_idx]
 
@@ -136,8 +143,7 @@ def rename_file(img_name):
 def save_image_from_sound(tid,foldername):
     filepath = os.path.join(audio_location,foldername,tid)
     filename = rename_file(filepath)
-    x = read_as_melspectrogram(conf, filepath, trim_long_data=False, debug_display=True)
-    # x_color = mono_to_color(x)
+    x = read_as_melspectrogram(conf2, filepath, trim_long_data=False, debug_display=True)
 
     plt.imshow(x, interpolation='nearest')
     plt.axis('off')
@@ -185,21 +191,21 @@ def slice_(img_path, desired_size):
         img_tmp.save(save_path + "/{}_{}.jpg".format(track_id.rstrip('.jpg'), i))
 
 
-# for folder in os.listdir(audio_location):
-#     i += 1
-#     if i == 11:
-#         break
-#     for file in os.listdir(audio_location + "/" + folder):
-#         try:
-#             save_image_from_sound(file,folder)
-#         except Exception as e:
-#             print("Got an exception: ", e, 'in folder: ', folder, ' filename: ', file)
+for folder in os.listdir(audio_location):
+    i += 1
+    if i == 11:
+        break
+    for file in os.listdir(audio_location + "/" + folder):
+        try:
+            save_image_from_sound(file,folder)
+        except Exception as e:
+            print("Got an exception: ", e, 'in folder: ', folder, ' filename: ', file)
 
 # slice_spectrograms(198)
-# file_path = 'outputclass2.txt'
+# file_path = 'outputclass1.txt'
 # sys.stdout = open(file_path, "w")
-gc.enable()
-create_dataset_from_slices(198)
+# gc.enable()
+# create_dataset_from_slices(198)
 
 
 # nb = GaussianNB()
